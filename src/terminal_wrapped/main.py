@@ -259,15 +259,23 @@ def print_command_complexity(commands: List[Tuple[str, datetime]]):
     complex_commands = get_most_complex_commands(commands)
     max_complexity = max(complexity for _, complexity, _ in complex_commands)
 
+    max_special_chars = ""
     for cmd, complexity, _ in complex_commands:
         special_chars = "".join(c for c in cmd if not c.isalnum() and not c.isspace())
+        if complexity == max_complexity:
+            max_special_chars = special_chars
+
         print(
             f"{Fore.YELLOW}Complexity: {complexity:<3} │ {format_bar(complexity, max_complexity)}"
         )
         print(f"{Fore.BLUE}Special characters: {Fore.WHITE}{special_chars}")
         wrapped_cmd = textwrap.fill(cmd, width=70, subsequent_indent="    ")
-        print(f"{Fore.CYAN}{wrapped_cmd}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}{get_complexity_comment(complexity)}{Style.RESET_ALL}\n")
+        print(f"{Fore.CYAN}{wrapped_cmd}{Style.RESET_ALL}\n")
+
+    print(
+        f"{Fore.YELLOW}Maximum complexity score: {max_complexity}! Your most complex command uses {len(max_special_chars)} unique special characters.{Style.RESET_ALL}"
+    )
+    print(f"{Fore.GREEN}{get_complexity_comment(max_complexity)}{Style.RESET_ALL}")
 
 
 def print_time_analysis(commands: List[Tuple[str, datetime]]):
