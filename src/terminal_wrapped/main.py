@@ -213,28 +213,43 @@ def print_base_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str,
 
 
 def print_full_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str, str]):
-    """Print analysis of full commands."""
-    print(format_section_header("🎼 Your Epic Command Lines 🎼"))
-    full_commands = get_top_full_commands(commands)
-    max_full_count = max(count for _, count in full_commands)
+    """Print analysis of full commands with alias expansion."""
+    print(format_section_header("🎼 Your Alias Artistry 🎼"))
 
-    for cmd, count in full_commands:
-        # Expand aliases in full commands
-        expanded_cmd = cmd
+    # Count all commands
+    command_counts = defaultdict(int)
+    for cmd, _ in commands:
         base_cmd = cmd.split()[0]
         if base_cmd in aliases:
-            expanded_cmd = cmd.replace(base_cmd, aliases[base_cmd], 1)
-            print(
-                f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
-            )
-            print(f"{Fore.BLUE}↳ expands to: {Fore.CYAN}{expanded_cmd}")
+            # Use the full expanded command as the key
+            expanded = cmd.replace(base_cmd, aliases[base_cmd], 1)
+            command_counts[expanded] += 1
         else:
-            print(
-                f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
-            )
+            command_counts[cmd] += 1
+
+    full_commands = sorted(command_counts.items(), key=lambda x: x[1], reverse=True)[
+        :10
+    ]
+    max_full_count = max(count for _, count in full_commands)
+
+    # Display commands
+    for cmd, count in full_commands:
+        # For expanded commands, show original alias in parentheses
+        base_cmd = cmd.split()[0]
+        for alias, expansion in aliases.items():
+            if cmd.startswith(expansion):
+                cmd = f"{cmd} ({alias})"
+                break
+
+        print(
+            f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
+        )
 
     print(
-        f"\n{Fore.YELLOW}{get_top_command_comment(full_commands[0][0])}{Style.RESET_ALL}"
+        f"\n{Fore.YELLOW}These are your favorite aliases and commands.{Style.RESET_ALL}"
+    )
+    print(
+        f"{Fore.YELLOW}{get_top_command_comment(full_commands[0][0].split()[0])}{Style.RESET_ALL}"
     )
 
 
