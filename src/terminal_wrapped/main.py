@@ -9,11 +9,9 @@ from typing import Dict, List, Tuple
 
 from colorama import Fore, Style, init
 
-from terminal_wrapped.comments import (
-    get_command_count_comment,
-    get_complexity_comment,
-    get_top_command_comment,
-)
+from terminal_wrapped.comments import (get_command_count_comment,
+                                       get_complexity_comment,
+                                       get_top_command_comment)
 
 # Initialize colorama
 init()

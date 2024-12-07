@@ -1,5 +1,5 @@
 [project]
-name = "terminal-wrapped"
+name = "terminal_wrapped"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-terminal-wrapped = "terminal_wrapped:main"
+terminal_wrapped = "terminal_wrapped:main"
 
 [build-system]
 requires = ["hatchling"]
