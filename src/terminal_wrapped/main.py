@@ -1,5 +1,8 @@
 import os
+import sys
+import termios
 import textwrap
+import tty
 from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple
@@ -432,7 +435,19 @@ def print_welcome():
     print(f"{Fore.GREEN}{ASCII_HEADER}{Style.RESET_ALL}")
     print(f"\n{Fore.YELLOW}Welcome to your Terminal Time Machine! 🚀{Style.RESET_ALL}")
     print("\nLet's explore your command line journey through 2024!")
-    print("\nUse arrow keys or '<>' to navigate, space/enter to proceed")
+    print("\nPress n/p for next/previous, q to quit")
+
+
+def get_key():
+    """Read a single keypress without requiring Enter."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
 
 
 def generate_wrapped_report(
@@ -455,30 +470,31 @@ def generate_wrapped_report(
 
     current_section = 0
     print_welcome()
+    get_key()  # Wait for any key to start
 
     while True:
         clear_screen()
         print(f"{Fore.GREEN}{ASCII_HEADER}{Style.RESET_ALL}")
         sections[current_section][1]()
         print(
-            f"\n{Fore.BLUE}[{current_section + 1}/{len(sections)}] Use n/p for next/previous, q to quit{Style.RESET_ALL}"
+            f"\n{Fore.BLUE}[{current_section + 1}/{len(sections)}] Press n/p for next/previous, q to quit{Style.RESET_ALL}"
         )
 
-        command = input().lower()
-        if command == "n":
-            current_section += 1
-        elif command == "p":
-            current_section -= 1
-        elif command == "q":
-            break
+        key = get_key()
 
-        current_section = max(0, min(current_section, len(sections)))
+        if key in ["n", " ", "\r"]:
+            current_section = min(current_section + 1, len(sections))
+        elif key == "p":
+            current_section = max(0, current_section - 1)
+        elif key == "q":
+            break
 
         if current_section == len(sections):
             clear_screen()
+            print(f"{Fore.GREEN}{ASCII_HEADER}{Style.RESET_ALL}")
             print(f"\n{Fore.GREEN}Thanks for the memories! 🎉{Style.RESET_ALL}")
-            print(f"\n{Fore.YELLOW}Happy coding! May your commits be clean")
-            print("and your bugs be few! 🐛✨{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Happy coding! May your commits be clean")
+            print(f"and your bugs be few! 🐛✨{Style.RESET_ALL}")
             break
 
 
