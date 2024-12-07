@@ -1,5 +1,5 @@
 # Terminal Wrapped 🎄✨
-<img src="wrapped.png" alt="Alt text" width="400"/>
+<img src="wrapped.png" alt="Alt text" width="800"/>
 
 Get your year-in-review for your terminal! Just like Spotify Wrapped, but for your command line adventures! 🚀
 
