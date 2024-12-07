@@ -20,3 +20,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/terminal_wrapped"]
+
+[project.urls]
+GitHub = "https://github.com/raoulg/terminal_wrapped"
+
