@@ -9,7 +9,6 @@ from colorama import Fore, Style, init
 from terminal_wrapped.comments import (
     get_command_count_comment,
     get_complexity_comment,
-    get_hour_comment,
     get_top_command_comment,
 )
 
@@ -279,40 +278,110 @@ def print_command_complexity(commands: List[Tuple[str, datetime]]):
 
 
 def print_time_analysis(commands: List[Tuple[str, datetime]]):
-    """Print analysis of command timing."""
+    """Print analysis of command timing with daily overview and insights."""
     print(format_section_header("⏰ Your Terminal Prime Time ⏰"))
     hour_counts = get_hourly_distribution(commands)
     max_hour_count = max(hour_counts.values())
 
-    print(f"{Fore.WHITE}Hour  │ Activity")
-    print(f"───────┼{'─' * 24}")
+    # Configure visualization width
+    hour_width = 2  # Width per hour block
+    total_width = hour_width * 24  # Total width for 24 hours
+
+    # Print time markers - ensure proper spacing between hours
+    print("Daily Activity Pattern:")
+    times = ["00:00", "06:00", "12:00", "18:00", "24:00"]
+    time_line = ""
+    current_pos = 0
+
+    for i, time in enumerate(times):
+        target_pos = (i * total_width) // 4
+        padding = target_pos - current_pos
+        time_line += " " * padding + time
+        current_pos = target_pos + len(time)
+
+    # Create divider line with same positioning
+    divider_line = ""
+    current_pos = 0
+    for i in range(len(times)):
+        target_pos = (i * total_width) // 4
+        padding = target_pos - current_pos
+        divider_line += " " * padding + "│"
+        current_pos = target_pos + 1
+
+    print(time_line)
+    print(divider_line)
+
+    # Generate the activity visualization
+    activity_line = ""
+    for hour in range(24):
+        count = hour_counts.get(hour, 0)
+        intensity = count / max_hour_count if max_hour_count > 0 else 0
+        if intensity > 0.75:
+            block = Fore.GREEN + "██"
+        elif intensity > 0.5:
+            block = Fore.YELLOW + "██"
+        elif intensity > 0.25:
+            block = Fore.RED + "██"
+        elif intensity > 0:
+            block = Fore.BLUE + "██"
+        else:
+            block = Fore.WHITE + "··"
+        activity_line += block
+
+    print(f"{activity_line}{Style.RESET_ALL}\n")
+
+    # Print detailed hourly breakdown
+    print(f"{Fore.WHITE}Hour  │ Commands")
+    print(f"───────┼{'─' * 50}")
 
     for hour in range(24):
         count = hour_counts.get(hour, 0)
         intensity = count / max_hour_count if max_hour_count > 0 else 0
+        bar_length = int(intensity * 40)
+        bar = ("█" * bar_length).ljust(40)
+        print(f"{hour:02d}:00 │ {bar} {count:>4}")
 
-        # Generate hour-specific activity bar
-        bar = ""
-        for h in range(24):
-            if h == hour:
-                if intensity > 0.75:
-                    bar += Fore.GREEN + "█"
-                elif intensity > 0.5:
-                    bar += Fore.YELLOW + "▓"
-                elif intensity > 0.25:
-                    bar += Fore.RED + "▒"
-                elif intensity > 0:
-                    bar += Fore.BLUE + "░"
-                else:
-                    bar += Fore.WHITE + " "
-            else:
-                bar += " "
+    # Add insights about the day
+    print(f"\n{Fore.YELLOW}Daily Insights:{Style.RESET_ALL}")
 
-        print(f"{hour:02d}:00 │ {bar}{Style.RESET_ALL} {count:>4}")
-        if count > max_hour_count * 0.5:
-            print(
-                f"{Fore.YELLOW}       {get_hour_comment(hour, count)}{Style.RESET_ALL}"
-            )
+    # Find first active hour between 5:00 and 23:59
+    start_hour = min(
+        (h for h, c in hour_counts.items() if c > 0 and 5 <= h < 24), default=None
+    )
+    if not start_hour:
+        start_hour = min((h for h, c in hour_counts.items() if c > 0), default=0)
+
+    most_active_hour = max(hour_counts.items(), key=lambda x: x[1])[0]
+    late_night_count = sum(hour_counts.get(h, 0) for h in range(0, 5))
+
+    # Get most used command for specific hours
+    def get_hour_top_command(hour: int) -> Tuple[str, int]:
+        hour_commands = [cmd for cmd, ts in commands if ts.hour == hour]
+        if not hour_commands:
+            return ("", 0)
+        return Counter(hour_commands).most_common(1)[0]
+
+    print(
+        f"🌅 Day starts at {start_hour:02d}:00 with {hour_counts[start_hour]} commands"
+    )
+    top_morning_cmd, count = get_hour_top_command(start_hour)
+    if top_morning_cmd:
+        print(f"   First order of business: {top_morning_cmd}")
+
+    print(
+        f"⚡ Peak activity at {most_active_hour:02d}:00 with {hour_counts[most_active_hour]} commands"
+    )
+    top_peak_cmd, count = get_hour_top_command(most_active_hour)
+    if top_peak_cmd:
+        print(f"   Favorite command: {top_peak_cmd}")
+
+    if late_night_count > 0:
+        print(f"🦉 {late_night_count} commands between midnight and 5 AM")
+        top_night_cmd, count = get_hour_top_command(
+            max(h for h in range(5) if hour_counts.get(h, 0) > 0)
+        )
+        if top_night_cmd:
+            print(f"   Late night special: {top_night_cmd}")
 
 
 def print_alias_analysis(commands: List[Tuple[str, datetime]], aliases: Dict[str, str]):
