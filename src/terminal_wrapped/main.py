@@ -398,40 +398,101 @@ def print_alias_analysis(commands: List[Tuple[str, datetime]], aliases: Dict[str
     alias_usage = analyze_alias_usage(aliases, commands)
     max_alias_count = max(alias_usage.values()) if alias_usage else 0
 
+    # Find longest alias for proper formatting
+    max_alias_len = max(len(alias) for alias in aliases.keys())
+    # Calculate position for count and bar
+    count_position = 60  # Adjust this value to change alignment
+
     for alias, count in sorted(alias_usage.items(), key=lambda x: x[1], reverse=True)[
         :5
     ]:
-        print(
-            f"{Fore.WHITE}{alias:<15} → {Fore.CYAN}{aliases[alias]:<30} {count:>5} │ {format_bar(count, max_alias_count)}"
-        )
+        expansion = aliases[alias]
+        # Start with alias and expansion
+        line = f"{Fore.WHITE}{alias:<{max_alias_len}} → {Fore.CYAN}{expansion}"
+        # Pad to fixed position for count
+        padding = count_position - len(alias) - 3 - len(expansion)  # -3 for " → "
+        if padding > 0:
+            line += " " * padding
+        # Add count and bar
+        line += f"{Fore.WHITE}{count:>4} │ {format_bar(count, max_alias_count)}"
+        print(line)
 
     print(f"\n{Fore.YELLOW}Neglected Aliases (Show them some ❤️):")
     unused = set(aliases.keys()) - set(alias_usage.keys())
     for alias in list(unused)[:5]:
-        print(f"{Fore.WHITE}{alias:<15} → {Fore.CYAN}{aliases[alias]}")
+        print(f"{Fore.WHITE}{alias:<{max_alias_len}} → {Fore.CYAN}{aliases[alias]}")
+
+
+def clear_screen():
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def print_welcome():
+    clear_screen()
+    print(f"{Fore.GREEN}{ASCII_HEADER}{Style.RESET_ALL}")
+    print(f"\n{Fore.YELLOW}Welcome to your Terminal Time Machine! 🚀{Style.RESET_ALL}")
+    print("\nLet's explore your command line journey through 2024!")
+    print("\nUse arrow keys or '<>' to navigate, space/enter to proceed")
+
+
+def generate_wrapped_report(
+    commands: List[Tuple[str, datetime]],
+    aliases: Dict[str, str],
+    total_commands: int,
+    unique_commands: int,
+):
+    sections = [
+        (
+            "Terminal Rhythm",
+            lambda: print_terminal_rhythm(total_commands, unique_commands),
+        ),
+        ("Base Commands", lambda: print_base_commands(commands, aliases)),
+        ("Command Lines", lambda: print_full_commands(commands, aliases)),
+        ("Command Symphonies", lambda: print_command_complexity(commands)),
+        ("Time Analysis", lambda: print_time_analysis(commands)),
+        ("Alias Symphony", lambda: print_alias_analysis(commands, aliases)),
+    ]
+
+    current_section = 0
+    print_welcome()
+
+    while True:
+        clear_screen()
+        print(f"{Fore.GREEN}{ASCII_HEADER}{Style.RESET_ALL}")
+        sections[current_section][1]()
+        print(
+            f"\n{Fore.BLUE}[{current_section + 1}/{len(sections)}] Use n/p for next/previous, q to quit{Style.RESET_ALL}"
+        )
+
+        command = input().lower()
+        if command == "n":
+            current_section += 1
+        elif command == "p":
+            current_section -= 1
+        elif command == "q":
+            break
+
+        current_section = max(0, min(current_section, len(sections)))
+
+        if current_section == len(sections):
+            clear_screen()
+            print(f"\n{Fore.GREEN}Thanks for the memories! 🎉{Style.RESET_ALL}")
+            print(f"\n{Fore.YELLOW}Happy coding! May your commits be clean")
+            print("and your bugs be few! 🐛✨{Style.RESET_ALL}")
+            break
 
 
 def main():
-    """Main function to generate the terminal wrapped report."""
     try:
-        # Initialize
         history_file = get_history_file()
         zshrc_path = os.path.expanduser("~/.zshrc")
 
-        # Load data
         commands = parse_zsh_history(history_file)
         aliases = parse_aliases(zshrc_path)
         total_commands = len(commands)
         unique_commands = len(set(cmd for cmd, _ in commands))
 
-        # Print each section
-        print_header()
-        print_terminal_rhythm(total_commands, unique_commands)
-        print_base_commands(commands, aliases)
-        print_full_commands(commands, aliases)
-        print_command_complexity(commands)
-        print_time_analysis(commands)
-        print_alias_analysis(commands, aliases)
+        generate_wrapped_report(commands, aliases, total_commands, unique_commands)
 
     except Exception as e:
         print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
