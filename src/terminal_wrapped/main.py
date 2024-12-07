@@ -18,17 +18,17 @@ init()
 
 ASCII_HEADER = """
 ╔════════════════════════════════════════════════════════════════╗
-║  ▄▄▄█████▓▓█████  ██▀███   ███▄ ▄███▓ ██▓ ███▄    █  ▄▄▄      ║
-║  ▓  ██▒ ▓▒▓█   ▀ ▓██ ▒ ██▒▓██▒▀█▀ ██▒▓██▒ ██ ▀█   █ ▒████▄    ║
-║  ▒ ▓██░ ▒░▒███   ▓██ ░▄█ ▒▓██    ▓██░▒██▒▓██  ▀█ ██▒▒██  ▀█▄  ║
-║  ░ ▓██▓ ░ ▒▓█  ▄ ▒██▀▀█▄  ▒██    ▒██ ░██░▓██▒  ▐▌██▒░██▄▄▄▄██ ║
-║    ▒██▒ ░ ░▒████▒░██▓ ▒██▒▒██▒   ░██▒░██░▒██░   ▓██░ ▓█   ▓██▒║
-║    ▒ ░░   ░░ ▒░ ░░ ▒▓ ░▒▓░░ ▒░   ░  ░░▓  ░ ▒░   ▒ ▒  ▒▒   ▓▒█░║
-║      ░     ░ ░  ░  ░▒ ░ ▒░░  ░      ░ ▒ ░░ ░░   ░ ▒░  ▒   ▒▒ ░║
-║    ░         ░     ░░   ░ ░      ░    ▒ ░   ░   ░ ░   ░   ▒   ║
-║              ░  ░   ░            ░    ░           ░       ░  ░║
-║                                                               ║
-║                     W R A P P E D   2 0 2 4                   ║
+║  ▄▄▄█████▓▓█████  ██▀███   ███▄ ▄███▓ ██▓ ███▄    █  ▄▄▄       ║
+║  ▓  ██▒ ▓▒▓█   ▀ ▓██ ▒ ██▒▓██▒▀█▀ ██▒▓██▒ ██ ▀█   █ ▒████▄     ║
+║  ▒ ▓██░ ▒░▒███   ▓██ ░▄█ ▒▓██    ▓██░▒██▒▓██  ▀█ ██▒▒██  ▀█▄   ║
+║  ░ ▓██▓ ░ ▒▓█  ▄ ▒██▀▀█▄  ▒██    ▒██ ░██░▓██▒  ▐▌██▒░██▄▄▄▄██  ║
+║    ▒██▒ ░ ░▒████▒░██▓ ▒██▒▒██▒   ░██▒░██░▒██░   ▓██░ ▓█   ▓██▒ ║
+║    ▒ ░░   ░░ ▒░ ░░ ▒▓ ░▒▓░░ ▒░   ░  ░░▓  ░ ▒░   ▒ ▒  ▒▒   ▓▒█░ ║
+║      ░     ░ ░  ░  ░▒ ░ ▒░░  ░      ░ ▒ ░░ ░░   ░ ▒░  ▒   ▒▒ ░ ║
+║    ░         ░     ░░   ░ ░      ░    ▒ ░   ░   ░ ░   ░   ▒    ║
+║              ░  ░   ░            ░    ░           ░       ░  ░ ║
+║                                                                ║
+║                     W R A P P E D   2 0 2 4                    ║
 ╚════════════════════════════════════════════════════════════════╝
 """
 
@@ -171,7 +171,156 @@ def format_time_bar(hour_counts: Dict[int, int], hour: int) -> str:
     return " "
 
 
+def print_header():
+    """Print the ASCII art header."""
+    print(Fore.GREEN + ASCII_HEADER + Style.RESET_ALL)
+
+
+def print_terminal_rhythm(total_commands: int, unique_commands: int):
+    """Print basic command statistics."""
+    print(format_section_header("🎵 Your Terminal Rhythm 🎵"))
+    print(f"{Fore.MAGENTA}Total commands: {Fore.WHITE}{total_commands}")
+    print(f"{Fore.MAGENTA}Unique commands: {Fore.WHITE}{unique_commands}")
+    print(
+        f"\n{Fore.YELLOW}{get_command_count_comment(total_commands)}{Style.RESET_ALL}"
+    )
+
+
+def print_base_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str, str]):
+    """Print analysis of true base commands (excluding aliases)."""
+    print(format_section_header("🌟 Your Top Raw Commands 🌟"))
+
+    # Count only non-alias base commands
+    base_counts = defaultdict(int)
+    for cmd, _ in commands:
+        base_cmd = cmd.split()[0]
+        if base_cmd not in aliases:  # Only count if not an alias
+            base_counts[base_cmd] += 1
+
+    base_commands = sorted(base_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    if not base_commands:
+        print(
+            f"{Fore.YELLOW}Wow, you really love your aliases! No raw commands found.{Style.RESET_ALL}"
+        )
+        return
+
+    max_base_count = max(count for _, count in base_commands)
+
+    for cmd, count in base_commands:
+        print(
+            f"{Fore.YELLOW}{cmd:<15}{Fore.WHITE} {count:>5} │ {format_bar(count, max_base_count)}"
+        )
+
+
+def print_full_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str, str]):
+    """Print analysis of full commands."""
+    print(format_section_header("🎼 Your Epic Command Lines 🎼"))
+    full_commands = get_top_full_commands(commands)
+    max_full_count = max(count for _, count in full_commands)
+
+    for cmd, count in full_commands:
+        # Expand aliases in full commands
+        expanded_cmd = cmd
+        base_cmd = cmd.split()[0]
+        if base_cmd in aliases:
+            expanded_cmd = cmd.replace(base_cmd, aliases[base_cmd], 1)
+            print(
+                f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
+            )
+            print(f"{Fore.BLUE}↳ expands to: {Fore.CYAN}{expanded_cmd}")
+        else:
+            print(
+                f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
+            )
+
+    print(
+        f"\n{Fore.YELLOW}{get_top_command_comment(full_commands[0][0])}{Style.RESET_ALL}"
+    )
+
+
+def print_command_complexity(commands: List[Tuple[str, datetime]]):
+    """Print analysis of command complexity."""
+    print(format_section_header("🎸 Your Command Symphonies 🎸"))
+    complex_commands = get_most_complex_commands(commands)
+    max_complexity = max(complexity for _, complexity, _ in complex_commands)
+
+    for cmd, complexity, _ in complex_commands:
+        special_chars = "".join(c for c in cmd if not c.isalnum() and not c.isspace())
+        print(
+            f"{Fore.YELLOW}Complexity: {complexity:<3} │ {format_bar(complexity, max_complexity)}"
+        )
+        print(f"{Fore.BLUE}Special characters: {Fore.WHITE}{special_chars}")
+        wrapped_cmd = textwrap.fill(cmd, width=70, subsequent_indent="    ")
+        print(f"{Fore.CYAN}{wrapped_cmd}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}{get_complexity_comment(complexity)}{Style.RESET_ALL}\n")
+
+
+def print_time_analysis(commands: List[Tuple[str, datetime]]):
+    """Print analysis of command timing."""
+    print(format_section_header("⏰ Your Terminal Prime Time ⏰"))
+    hour_counts = get_hourly_distribution(commands)
+    max_hour_count = max(hour_counts.values())
+
+    print(f"{Fore.WHITE}Hour  │ Activity")
+    print(f"───────┼{'─' * 24}")
+
+    for hour in range(24):
+        count = hour_counts.get(hour, 0)
+        intensity = count / max_hour_count if max_hour_count > 0 else 0
+
+        # Generate hour-specific activity bar
+        bar = ""
+        for h in range(24):
+            if h == hour:
+                if intensity > 0.75:
+                    bar += Fore.GREEN + "█"
+                elif intensity > 0.5:
+                    bar += Fore.YELLOW + "▓"
+                elif intensity > 0.25:
+                    bar += Fore.RED + "▒"
+                elif intensity > 0:
+                    bar += Fore.BLUE + "░"
+                else:
+                    bar += Fore.WHITE + " "
+            else:
+                bar += " "
+
+        print(f"{hour:02d}:00 │ {bar}{Style.RESET_ALL} {count:>4}")
+        if count > max_hour_count * 0.5:
+            print(
+                f"{Fore.YELLOW}       {get_hour_comment(hour, count)}{Style.RESET_ALL}"
+            )
+
+
+def print_alias_analysis(commands: List[Tuple[str, datetime]], aliases: Dict[str, str]):
+    """Print analysis of alias usage."""
+    print(format_section_header("🎹 Your Alias Symphony 🎹"))
+
+    if not aliases:
+        print(
+            f"{Fore.YELLOW}No aliases found! Living life on hard mode, eh?{Style.RESET_ALL}"
+        )
+        return
+
+    print(f"{Fore.YELLOW}Most Used Aliases:")
+    alias_usage = analyze_alias_usage(aliases, commands)
+    max_alias_count = max(alias_usage.values()) if alias_usage else 0
+
+    for alias, count in sorted(alias_usage.items(), key=lambda x: x[1], reverse=True)[
+        :5
+    ]:
+        print(
+            f"{Fore.WHITE}{alias:<15} → {Fore.CYAN}{aliases[alias]:<30} {count:>5} │ {format_bar(count, max_alias_count)}"
+        )
+
+    print(f"\n{Fore.YELLOW}Neglected Aliases (Show them some ❤️):")
+    unused = set(aliases.keys()) - set(alias_usage.keys())
+    for alias in list(unused)[:5]:
+        print(f"{Fore.WHITE}{alias:<15} → {Fore.CYAN}{aliases[alias]}")
+
+
 def main():
+    """Main function to generate the terminal wrapped report."""
     try:
         # Initialize
         history_file = get_history_file()
@@ -183,134 +332,14 @@ def main():
         total_commands = len(commands)
         unique_commands = len(set(cmd for cmd, _ in commands))
 
-        print(Fore.GREEN + ASCII_HEADER + Style.RESET_ALL)
-
-        # Your Terminal Rhythm section
-        print(format_section_header("🎵 Your Terminal Rhythm 🎵"))
-        print(f"{Fore.MAGENTA}Total commands: {Fore.WHITE}{total_commands}")
-        print(f"{Fore.MAGENTA}Unique commands: {Fore.WHITE}{unique_commands}")
-        print(
-            f"\n{Fore.YELLOW}{get_command_count_comment(total_commands)}{Style.RESET_ALL}"
-        )
-
-        # Base Commands Analysis
-        print(format_section_header("🌟 Your Top Hits (Base Commands) 🌟"))
-        base_commands = get_top_commands(commands)
-        max_base_count = max(count for _, count in base_commands)
-
-        for cmd, count in base_commands:
-            print(
-                f"{Fore.YELLOW}{cmd:<15}{Fore.WHITE} {count:>5} │ {format_bar(count, max_base_count)}"
-            )
-            if cmd in aliases:
-                print(f"{Fore.BLUE}↳ alias for: {Fore.CYAN}{aliases[cmd]}")
-
-        top_base_cmd = base_commands[0][0]
-        print(
-            f"\n{Fore.YELLOW}{get_top_command_comment(top_base_cmd)}{Style.RESET_ALL}"
-        )
-
-        # Full Commands Analysis
-        print(format_section_header("🎼 Your Epic Command Lines 🎼"))
-        full_commands = get_top_full_commands(commands)
-        max_full_count = max(count for _, count in full_commands)
-
-        for cmd, count in full_commands:
-            # Expand aliases in full commands
-            expanded_cmd = cmd
-            base_cmd = cmd.split()[0]
-            if base_cmd in aliases:
-                expanded_cmd = cmd.replace(base_cmd, aliases[base_cmd], 1)
-                print(
-                    f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
-                )
-                print(f"{Fore.BLUE}↳ expands to: {Fore.CYAN}{expanded_cmd}")
-            else:
-                print(
-                    f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
-                )
-
-        print(
-            f"\n{Fore.YELLOW}{get_top_command_comment(full_commands[0][0])}{Style.RESET_ALL}"
-        )
-
-        # Command Complexity Analysis
-        print(format_section_header("🎸 Your Command Symphonies 🎸"))
-        complex_commands = get_most_complex_commands(commands)
-        max_complexity = max(complexity for _, complexity, _ in complex_commands)
-
-        for cmd, complexity, _ in complex_commands:
-            special_chars = "".join(
-                c for c in cmd if not c.isalnum() and not c.isspace()
-            )
-            print(
-                f"{Fore.YELLOW}Complexity: {complexity:<3} │ {format_bar(complexity, max_complexity)}"
-            )
-            print(f"{Fore.BLUE}Special characters: {Fore.WHITE}{special_chars}")
-            wrapped_cmd = textwrap.fill(cmd, width=70, subsequent_indent="    ")
-            print(f"{Fore.CYAN}{wrapped_cmd}{Style.RESET_ALL}")
-            print(
-                f"{Fore.GREEN}{get_complexity_comment(complexity)}{Style.RESET_ALL}\n"
-            )
-
-        # Time Analysis
-        print(format_section_header("⏰ Your Terminal Prime Time ⏰"))
-        hour_counts = get_hourly_distribution(commands)
-        max_hour_count = max(hour_counts.values())
-
-        print(f"{Fore.WHITE}Hour  │ Activity")
-        print(f"───────┼{'─' * 24}")
-
-        for hour in range(24):
-            count = hour_counts.get(hour, 0)
-            intensity = count / max_hour_count if max_hour_count > 0 else 0
-
-            # Generate hour-specific activity bar
-            bar = ""
-            for h in range(24):
-                if h == hour:
-                    if intensity > 0.75:
-                        bar += Fore.GREEN + "█"
-                    elif intensity > 0.5:
-                        bar += Fore.YELLOW + "▓"
-                    elif intensity > 0.25:
-                        bar += Fore.RED + "▒"
-                    elif intensity > 0:
-                        bar += Fore.BLUE + "░"
-                    else:
-                        bar += Fore.WHITE + " "
-                else:
-                    bar += " "
-
-            print(f"{hour:02d}:00 │ {bar}{Style.RESET_ALL} {count:>4}")
-            if count > max_hour_count * 0.5:
-                print(
-                    f"{Fore.YELLOW}       {get_hour_comment(hour, count)}{Style.RESET_ALL}"
-                )
-
-        # Alias Analysis
-        print(format_section_header("🎹 Your Alias Symphony 🎹"))
-
-        if not aliases:
-            print(
-                f"{Fore.YELLOW}No aliases found! Living life on hard mode, eh?{Style.RESET_ALL}"
-            )
-        else:
-            print(f"{Fore.YELLOW}Most Used Aliases:")
-            alias_usage = analyze_alias_usage(aliases, commands)
-            max_alias_count = max(alias_usage.values()) if alias_usage else 0
-
-            for alias, count in sorted(
-                alias_usage.items(), key=lambda x: x[1], reverse=True
-            )[:5]:
-                print(
-                    f"{Fore.WHITE}{alias:<15} → {Fore.CYAN}{aliases[alias]:<30} {count:>5} │ {format_bar(count, max_alias_count)}"
-                )
-
-            print(f"\n{Fore.YELLOW}Neglected Aliases (Show them some ❤️):")
-            unused = set(aliases.keys()) - set(alias_usage.keys())
-            for alias in list(unused)[:5]:
-                print(f"{Fore.WHITE}{alias:<15} → {Fore.CYAN}{aliases[alias]}")
+        # Print each section
+        print_header()
+        print_terminal_rhythm(total_commands, unique_commands)
+        print_base_commands(commands, aliases)
+        print_full_commands(commands, aliases)
+        print_command_complexity(commands)
+        print_time_analysis(commands)
+        print_alias_analysis(commands, aliases)
 
     except Exception as e:
         print(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
