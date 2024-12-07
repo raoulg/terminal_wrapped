@@ -9,9 +9,11 @@ from typing import Dict, List, Tuple
 
 from colorama import Fore, Style, init
 
-from terminal_wrapped.comments import (get_command_count_comment,
-                                       get_complexity_comment,
-                                       get_top_command_comment)
+from terminal_wrapped.comments import (
+    get_command_count_comment,
+    get_complexity_comment,
+    get_top_command_comment,
+)
 
 # Initialize colorama
 init()
@@ -115,6 +117,12 @@ def get_hourly_distribution(commands: List[Tuple[str, datetime]]) -> Dict[int, i
     return dict(sorted(hour_counts.items()))
 
 
+def format_count_with_percentage(count: int, total_commands: int) -> str:
+    """Format count with percentage in parentheses."""
+    percentage = (count / total_commands) * 100
+    return f"{count:>5} ({percentage:.1f}%)"
+
+
 def parse_aliases(zshrc_path: str) -> Dict[str, str]:
     """Parse aliases from .zshrc file."""
     aliases = {}
@@ -205,10 +213,10 @@ def print_base_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str,
         return
 
     max_base_count = max(count for _, count in base_commands)
-
+    total_commands = len(commands)
     for cmd, count in base_commands:
         print(
-            f"{Fore.YELLOW}{cmd:<15}{Fore.WHITE} {count:>5} │ {format_bar(count, max_base_count)}"
+            f"{Fore.YELLOW}{cmd:<15}{Fore.WHITE} {format_count_with_percentage(count, total_commands)} │ {format_bar(count, max_base_count)}"
         )
 
 
