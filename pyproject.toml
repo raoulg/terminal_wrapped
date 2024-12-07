@@ -21,6 +21,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/terminal_wrapped"]
 
+[dependency-groups]
+dev = [
+    "black>=24.10.0",
+]
+
 [project.urls]
 GitHub = "https://github.com/raoulg/terminal_wrapped"
 
