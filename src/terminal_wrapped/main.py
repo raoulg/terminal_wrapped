@@ -239,6 +239,7 @@ def print_full_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str,
         :10
     ]
     max_full_count = max(count for _, count in full_commands)
+    total_commands = len(commands)
 
     # Display commands
     for cmd, count in full_commands:
@@ -250,7 +251,7 @@ def print_full_commands(commands: List[Tuple[str, datetime]], aliases: Dict[str,
                 break
 
         print(
-            f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {count:>5} │ {format_bar(count, max_full_count)}"
+            f"{Fore.YELLOW}{cmd:<50}{Fore.WHITE} {format_count_with_percentage(count, total_commands)} │ {format_bar(count, max_full_count)}"
         )
 
     print(
