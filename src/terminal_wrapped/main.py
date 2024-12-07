@@ -4,7 +4,7 @@ import termios
 import textwrap
 import tty
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 from colorama import Fore, Style, init
@@ -115,6 +115,52 @@ def get_hourly_distribution(commands: List[Tuple[str, datetime]]) -> Dict[int, i
     for _, timestamp in commands:
         hour_counts[timestamp.hour] += 1
     return dict(sorted(hour_counts.items()))
+
+
+def get_monthly_distribution(commands: List[Tuple[str, datetime]]) -> Dict[str, int]:
+    """Get command distribution by month."""
+    month_counts = defaultdict(int)
+    for _, timestamp in commands:
+        month_key = timestamp.strftime("%Y-%m")
+        month_counts[month_key] += 1
+    return dict(sorted(month_counts.items()))
+
+
+def get_daily_distribution(commands: List[Tuple[str, datetime]]) -> Dict[str, int]:
+    """Get command distribution by day."""
+    daily_counts = defaultdict(int)
+    for _, timestamp in commands:
+        day_key = timestamp.strftime("%Y-%m-%d")
+        daily_counts[day_key] += 1
+    return dict(sorted(daily_counts.items()))
+
+
+def format_activity_block(value: int, max_value: int) -> str:
+    if value == 0:
+        return f"{Fore.WHITE}▁{Style.RESET_ALL}"  # Empty - low block
+    intensity = value / max_value
+    if intensity > 0.75:
+        return f"{Fore.GREEN}█{Style.RESET_ALL}"  # Full block
+    elif intensity > 0.5:
+        return f"{Fore.GREEN}▆{Style.RESET_ALL}"  # 6/8 block
+    elif intensity > 0.25:
+        return f"{Fore.GREEN}▄{Style.RESET_ALL}"  # Half block
+    else:
+        return f"{Fore.GREEN}▂{Style.RESET_ALL}"  # 2/8 block
+
+
+def format_activity_block2(value: int, max_value: int) -> str:
+    if value == 0:
+        return f"{Fore.WHITE}□{Style.RESET_ALL}"  # Empty square
+    intensity = value / max_value
+    if intensity > 0.75:
+        return f"{Fore.GREEN}█{Style.RESET_ALL}"  # Highest activity
+    elif intensity > 0.5:
+        return f"{Fore.GREEN}▓{Style.RESET_ALL}"  # High activity
+    elif intensity > 0.25:
+        return f"{Fore.GREEN}▒{Style.RESET_ALL}"  # Medium activity
+    else:
+        return f"{Fore.GREEN}░{Style.RESET_ALL}"  # Low activity
 
 
 def format_count_with_percentage(count: int, total_commands: int) -> str:
@@ -343,13 +389,16 @@ def print_time_analysis(commands: List[Tuple[str, datetime]]):
     # Print detailed hourly breakdown
     print(f"{Fore.WHITE}Hour  │ Commands")
     print(f"───────┼{'─' * 50}")
+    total_commands = len(commands)
 
     for hour in range(24):
         count = hour_counts.get(hour, 0)
         intensity = count / max_hour_count if max_hour_count > 0 else 0
         bar_length = int(intensity * 40)
         bar = ("█" * bar_length).ljust(40)
-        print(f"{hour:02d}:00 │ {bar} {count:>4}")
+        print(
+            f"{hour:02d}:00 │ {bar} {format_count_with_percentage(count, total_commands)}"
+        )
 
     # Add insights about the day
     print(f"\n{Fore.YELLOW}Daily Insights:{Style.RESET_ALL}")
@@ -394,6 +443,40 @@ def print_time_analysis(commands: List[Tuple[str, datetime]]):
             print(f"   Late night special: {top_night_cmd}")
 
 
+def print_yearly_activity(commands: List[Tuple[str, datetime]]):
+    latest_date = max(timestamp for _, timestamp in commands).date()
+    start_date = (latest_date.replace(day=1) - timedelta(days=365)).replace(day=1)
+
+    daily_counts = defaultdict(int)
+    current = start_date
+    while current <= latest_date:
+        daily_counts[current.strftime("%Y-%m-%d")] = 0
+        current += timedelta(days=1)
+
+    for _, timestamp in commands:
+        if timestamp.date() >= start_date:
+            daily_counts[timestamp.strftime("%Y-%m-%d")] += 1
+
+    max_count = max(daily_counts.values()) if daily_counts else 1
+    total_commands = len([cmd for cmd, ts in commands if ts.date() >= start_date])
+
+    month_groups = defaultdict(list)
+    for date_str, count in sorted(daily_counts.items()):
+        month_key = date_str[:7]
+        month_groups[month_key].append(count)
+
+    max_blocks = max(len(counts) for counts in month_groups.values())
+
+    for month_key, counts in sorted(month_groups.items())[:13]:  # Limit to 13 months
+        month_name = datetime.strptime(month_key, "%Y-%m").strftime("%b")
+        month_total = sum(counts)
+        blocks = "".join(format_activity_block(count, max_count) for count in counts)
+        padding = " " * (max_blocks - len(counts))
+        print(
+            f"{Fore.WHITE}{month_name:<4} {blocks}{padding} {format_count_with_percentage(month_total, total_commands):>12}"
+        )
+
+
 def print_alias_analysis(commands: List[Tuple[str, datetime]], aliases: Dict[str, str]):
     """Print analysis of alias usage."""
     print(format_section_header("🎹 Your Alias Symphony 🎹"))
@@ -412,6 +495,7 @@ def print_alias_analysis(commands: List[Tuple[str, datetime]], aliases: Dict[str
     max_alias_len = max(len(alias) for alias in aliases.keys())
     # Calculate position for count and bar
     count_position = 60  # Adjust this value to change alignment
+    total_commands = len(commands)
 
     for alias, count in sorted(alias_usage.items(), key=lambda x: x[1], reverse=True)[
         :5
@@ -424,7 +508,7 @@ def print_alias_analysis(commands: List[Tuple[str, datetime]], aliases: Dict[str
         if padding > 0:
             line += " " * padding
         # Add count and bar
-        line += f"{Fore.WHITE}{count:>4} │ {format_bar(count, max_alias_count)}"
+        line += f"{Fore.WHITE}{format_count_with_percentage(count, total_commands)} │ {format_bar(count, max_alias_count)}"
         print(line)
 
     print(f"\n{Fore.YELLOW}Neglected Aliases (Show them some ❤️):")
@@ -472,6 +556,7 @@ def generate_wrapped_report(
         ("Command Lines", lambda: print_full_commands(commands, aliases)),
         ("Command Symphonies", lambda: print_command_complexity(commands)),
         ("Time Analysis", lambda: print_time_analysis(commands)),
+        ("Yearly Activity", lambda: print_yearly_activity(commands)),
         ("Alias Symphony", lambda: print_alias_analysis(commands, aliases)),
     ]
 
