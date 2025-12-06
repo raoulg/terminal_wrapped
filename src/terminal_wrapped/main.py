@@ -6,6 +6,7 @@ import tty
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
+from loguru import logger
 
 from colorama import Fore, Style, init
 
