@@ -27,7 +27,9 @@ type CommandCount struct {
 }
 
 // RoastRequest is the data sent by the CLI
+// RoastRequest is the data sent by the CLI
 type RoastRequest struct {
+	Mode               string         `json:"mode"` // "intro" or "details"
 	TotalCommands      int            `json:"total_commands"`
 	UniqueCommands     int            `json:"unique_commands"`
 	TopCommands        []CommandCount `json:"top_commands"`
@@ -38,6 +40,10 @@ type RoastRequest struct {
 	LongestStreak      int            `json:"longest_streak"`
 	LongestStreakStart string         `json:"longest_streak_start"`
 	LongestStreakEnd   string         `json:"longest_streak_end"`
+	// Extended Analysis
+	TopDirectories  []CommandCount `json:"top_directories"`
+	ComplexityScore float64        `json:"complexity_score"`
+	TopEditors      []CommandCount `json:"top_editors"`
 }
 
 // NebiusRequest is the payload sent to Nebius AI
@@ -154,7 +160,15 @@ func main() {
 }
 
 func handleRoast(w http.ResponseWriter, r *http.Request) {
-	// ... (CORS handling remains same)
+	// Enable CORS
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -167,7 +181,6 @@ func handleRoast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construct prompt based on mode
 	var systemPrompt, userPrompt string
 
 	if req.Mode == "intro" {
@@ -210,7 +223,6 @@ Example JSON:
 		statsCount := len(store.Stats)
 		store.mu.Unlock()
 
-		// ... (Percentile logic)
 		if statsCount < 4 {
 			earlyAdopterMsg = " (You are one of the first 4 users! Come back later for global stats.)"
 		} else {
@@ -239,6 +251,16 @@ Example JSON:
 			topAliases += fmt.Sprintf("- %s: %d\n", cmd.Name, cmd.Count)
 		}
 
+		topDirs := ""
+		for _, cmd := range req.TopDirectories {
+			topDirs += fmt.Sprintf("- %s: %d\n", cmd.Name, cmd.Count)
+		}
+
+		topEditors := ""
+		for _, cmd := range req.TopEditors {
+			topEditors += fmt.Sprintf("- %s: %d\n", cmd.Name, cmd.Count)
+		}
+
 		systemPrompt = `You are a witty, slightly snarky CLI assistant.
 Your goal is to generate specific remarks and stories for a "Spotify Wrapped" style summary.
 Return ONLY valid JSON. No markdown formatting.`
@@ -252,70 +274,95 @@ Analyze these detailed stats:
 - Longest Streak: %s %s
 - Most Active Day: %s
 - Most Active Hour: %d:00
+- Global Rank: %s
+- Top Directories:
+%s
+- Complexity Score: %.2f (avg special chars per command)
+- Top Editors:
+%s
 
 Return a JSON object with these keys:
 - "top_command_remarks": A JSON object mapping each top command name to a very short (3-5 words) witty remark.
 - "alias_remarks": A JSON object mapping each top alias name to a very short (3-5 words) witty remark.
-			Messages: []Message{
-				{Role: "system", Content: "You are a helpful assistant that outputs JSON."},
-				{Role: "user", Content: prompt},
-			},
-			Temperature:    0.7,
-			ResponseFormat: &ResponseFormat{Type: "json_object"}, // Force JSON mode if supported, or just prompt engineering
-		}
+- "streaks": A short comment on their consistency.
+- "punchcard": A short comment on their peak day/hour.
+- "directory_heatmap": A short comment on their most visited folders.
+- "complexity": A short comment on their "Hacker Level" based on complexity score (0-0.5: Script Kiddie, 0.5-1.0: Junior Dev, >1.0: Bash Wizard).
+- "editor_wars": A roast/comment on their editor choice. Pick a side!
 
-		jsonData, err := json.Marshal(nebiusReq)
-		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		apiReq, err := http.NewRequest("POST", NebiusBaseURL, bytes.NewBuffer(jsonData))
-		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		apiReq.Header.Set("Content-Type", "application/json")
-		apiReq.Header.Set("Authorization", "Bearer "+apiKey)
-
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Do(apiReq)
-		if err != nil {
-			log.Printf("Error calling Nebius: %v", err)
-			http.Error(w, fmt.Sprintf("Failed to contact AI provider: %v", err), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			log.Printf("Nebius API error: %s", string(body))
-			http.Error(w, fmt.Sprintf("AI provider returned error: %d %s", resp.StatusCode, string(body)), http.StatusBadGateway)
-			return
-		}
-
-		var nebiusResp NebiusResponse
-		if err := json.NewDecoder(resp.Body).Decode(&nebiusResp); err != nil {
-			http.Error(w, "Failed to decode AI response", http.StatusInternalServerError)
-			return
-		}
-
-		if len(nebiusResp.Choices) == 0 {
-			http.Error(w, "No response from AI", http.StatusBadGateway)
-			return
-		}
-
-		// Return just the text
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(nebiusResp.Choices[0].Message.Content))
-	})
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+Example JSON:
+{
+  "top_command_remarks": {"git": "Commit early, commit often!", "ls": "Lost again?"},
+  "alias_remarks": {"g": "Efficiency is key."},
+  "streaks": "5 days in a row! Keep it up!",
+  "punchcard": "You code mostly on Fridays. Weekend warrior?",
+  "directory_heatmap": "You live in ~/projects. Time to go outside?",
+  "complexity": "Complexity 1.2? You're a pipe master!",
+  "editor_wars": "Vim user? I hope you know how to exit."
+}`, topCmds, topAliases, streakInfo, streakMsg, req.MostActiveDay, req.MostActiveHour, earlyAdopterMsg, topDirs, req.ComplexityScore, topEditors)
 	}
 
-	fmt.Printf("Proxy server listening on port %s...\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	// Call Nebius AI
+	apiKey := os.Getenv("NEBIUS_API_KEY")
+	if apiKey == "" {
+		log.Println("NEBIUS_API_KEY not set")
+		http.Error(w, "Server configuration error", http.StatusInternalServerError)
+		return
+	}
+
+	nebiusReq := NebiusRequest{
+		Model: ModelName,
+		Messages: []Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+		Temperature:    0.7,
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
+	}
+
+	jsonData, err := json.Marshal(nebiusReq)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	apiReq, err := http.NewRequest("POST", NebiusBaseURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(apiReq)
+	if err != nil {
+		log.Printf("Error calling Nebius: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to contact AI provider: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Nebius API error: %s", string(body))
+		http.Error(w, fmt.Sprintf("AI provider returned error: %d %s", resp.StatusCode, string(body)), http.StatusBadGateway)
+		return
+	}
+
+	var nebiusResp NebiusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&nebiusResp); err != nil {
+		http.Error(w, "Failed to decode AI response", http.StatusInternalServerError)
+		return
+	}
+
+	if len(nebiusResp.Choices) == 0 {
+		http.Error(w, "No response from AI", http.StatusBadGateway)
+		return
+	}
+
+	// Return just the text
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(nebiusResp.Choices[0].Message.Content))
 }

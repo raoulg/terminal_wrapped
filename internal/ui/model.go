@@ -24,9 +24,11 @@ type Model struct {
 	TopCommandRemarks  map[string]string
 	AliasRemarks       map[string]string
 	LoadingAI          bool
+	LoadingDetails     bool // New flag for background loading
 	AIResponseReceived bool
 	AnimationPercent   float64 // 0.0 to 1.0
 	Progress           progress.Model
+	DetailsProgress    progress.Model // New progress bar for details
 	LoadingMsgIndex    int
 	LastMsgUpdate      time.Time
 }
@@ -44,7 +46,11 @@ type Slide interface {
 	Content(m Model) string
 }
 
-type AIStoryMsg struct {
+type AIIntroMsg struct {
+	Stories map[string]string
+}
+
+type AIDetailsMsg struct {
 	Stories           map[string]string
 	TopCommandRemarks map[string]string
 	AliasRemarks      map[string]string
@@ -60,30 +66,45 @@ var loadingMessages = []string{
 	"🚀 Finalizing your roast...",
 }
 
+var detailLoadingMessages = []string{
+	"✋ Not so fast! The AI is still roasting you...",
+	"🔥 Servers are melting, give it a second...",
+	"🤖 Computing maximum snark...",
+	"⚡️ Hold your horses, speed racer...",
+}
+
 func NewModel(analysis *analyzer.Analysis) Model {
 	prog := progress.New(progress.WithDefaultGradient())
 	prog.Width = 40
+
+	detailsProg := progress.New(progress.WithDefaultGradient())
+	detailsProg.Width = 40
 
 	return Model{
 		Analysis: analysis,
 		Slides: []Slide{
 			IntroSlide{},
 			RhythmSlide{},
-			StreakSlide{}, // New
+			StreakSlide{},
 			TopCommandsSlide{},
 			AliasSlide{},
-			PunchcardSlide{}, // New
+			DirectorySlide{},  // New
+			ComplexitySlide{}, // New
+			EditorSlide{},     // New
+			PunchcardSlide{},
 			HourlySlide{},
 			MonthlySlide{},
 			OutroSlide{},
 		},
 		LoadingAI:          true,
+		LoadingDetails:     true, // Start loading details
 		AIResponseReceived: false,
 		AIStories:          make(map[string]string),
 		TopCommandRemarks:  make(map[string]string),
 		AliasRemarks:       make(map[string]string),
 		AnimationPercent:   0.0,
 		Progress:           prog,
+		DetailsProgress:    detailsProg,
 		LoadingMsgIndex:    0,
 		LastMsgUpdate:      time.Now(),
 	}
@@ -94,19 +115,15 @@ func (m Model) Init() tea.Cmd {
 		func() tea.Msg {
 			client := llm.NewClient()
 			if client == nil {
-				return AIStoryMsg{Stories: nil}
+				return AIIntroMsg{Stories: nil}
 			}
 
-			// Fetch structured story
-			stories, cmdRemarks, aliasRemarks, err := client.GenerateStory(m.Analysis)
+			// Fetch intro story (fast)
+			stories, err := client.GenerateIntro(m.Analysis)
 			if err != nil {
-				return AIStoryMsg{Stories: nil}
+				return AIIntroMsg{Stories: nil}
 			}
-			return AIStoryMsg{
-				Stories:           stories,
-				TopCommandRemarks: cmdRemarks,
-				AliasRemarks:      aliasRemarks,
-			}
+			return AIIntroMsg{Stories: stories}
 		},
 		tick(), // Start animation
 	)
@@ -114,64 +131,139 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case AIStoryMsg:
-		m.AIStories = msg.Stories
+	case AIIntroMsg:
+		// Intro received, stop loading and show UI
+		for k, v := range msg.Stories {
+			m.AIStories[k] = v
+		}
+		m.AIResponseReceived = true
+		m.LoadingAI = false // Allow interaction immediately
+
+		// Trigger details fetch in background
+		return m, func() tea.Msg {
+			client := llm.NewClient()
+			if client == nil {
+				return AIDetailsMsg{}
+			}
+			stories, cmdRemarks, aliasRemarks, err := client.GenerateDetails(m.Analysis)
+			if err != nil {
+				return AIDetailsMsg{}
+			}
+			return AIDetailsMsg{
+				Stories:           stories,
+				TopCommandRemarks: cmdRemarks,
+				AliasRemarks:      aliasRemarks,
+			}
+		}
+
+	case AIDetailsMsg:
+		// Details received, update model silently
+		for k, v := range msg.Stories {
+			m.AIStories[k] = v
+		}
 		m.TopCommandRemarks = msg.TopCommandRemarks
 		m.AliasRemarks = msg.AliasRemarks
-		m.AIResponseReceived = true
-		// Don't set LoadingAI = false yet, let the progress bar finish
+		m.LoadingDetails = false // Details loaded!
+		return m, nil
+
 	case TickMsg:
-		// Animate progress bar if loading
+		var cmds []tea.Cmd
+
+		// Animate Intro progress bar if loading
 		if m.LoadingAI {
 			percent := m.Progress.Percent()
-
-			// Increment logic
 			increment := 0.0
 
 			if m.AIResponseReceived {
-				// Finish fast!
 				increment = 0.05
 			} else {
 				if percent < 0.95 {
-					// Fast(er) phase: 0 to 95% in about 15 seconds
-					// 15 seconds / 0.05s tick = 300 ticks
-					// 0.95 / 300 = ~0.0032
 					increment = 0.0035
 				} else if percent < 0.99 {
-					// Stalling phase: very slow
 					increment = 0.0001
 				}
 			}
 
 			if percent+increment < 1.0 {
 				cmd := m.Progress.SetPercent(percent + increment)
+				cmds = append(cmds, cmd)
 
-				// Cycle messages every 3 seconds
 				if time.Since(m.LastMsgUpdate) > 3*time.Second {
 					m.LoadingMsgIndex = (m.LoadingMsgIndex + 1) % len(loadingMessages)
 					m.LastMsgUpdate = time.Now()
 				}
-
-				return m, tea.Batch(cmd, tick())
 			} else {
-				// Done!
 				m.LoadingAI = false
-				return m, tick()
+			}
+		}
+
+		// Animate Details progress bar if loading
+		if m.LoadingDetails {
+			percent := m.DetailsProgress.Percent()
+			increment := 0.0
+
+			// We don't know when it finishes until AIDetailsMsg comes,
+			// so we just guess a slower pace than Intro
+			if percent < 0.90 {
+				// 0 to 90% in about 30 seconds
+				increment = 0.0015
+			} else if percent < 0.99 {
+				// Stalling phase
+				increment = 0.00005
+			}
+
+			// If we received details (LoadingDetails set to false in AIDetailsMsg),
+			// this block won't run, but we want to ensure it fills up?
+			// Actually AIDetailsMsg sets LoadingDetails=false immediately.
+			// So we don't need a "finish fast" logic here because the UI will just switch to content.
+
+			if percent+increment < 1.0 {
+				cmd := m.DetailsProgress.SetPercent(percent + increment)
+				cmds = append(cmds, cmd)
+			}
+		}
+
+		// Animate Details progress bar if loading
+		if m.LoadingDetails {
+			percent := m.DetailsProgress.Percent()
+			increment := 0.0
+
+			// We don't know when it finishes until AIDetailsMsg comes,
+			// so we just guess a slower pace than Intro
+			if percent < 0.90 {
+				// 0 to 90% in about 30 seconds
+				increment = 0.0015
+			} else if percent < 0.99 {
+				// Stalling phase
+				increment = 0.00005
+			}
+
+			if percent+increment < 1.0 {
+				cmd := m.DetailsProgress.SetPercent(percent + increment)
+				cmds = append(cmds, cmd)
 			}
 		}
 
 		// Animate charts if not loading
-		if m.AnimationPercent < 1.0 {
+		if !m.LoadingAI && m.AnimationPercent < 1.0 {
 			m.AnimationPercent += 0.05
 			if m.AnimationPercent > 1.0 {
 				m.AnimationPercent = 1.0
 			}
-			return m, tick()
 		}
+
+		cmds = append(cmds, tick())
+		return m, tea.Batch(cmds...)
+
 	case progress.FrameMsg:
-		progressModel, cmd := m.Progress.Update(msg)
-		m.Progress = progressModel.(progress.Model)
-		return m, cmd
+		newProg, cmd1 := m.Progress.Update(msg)
+		m.Progress = newProg.(progress.Model)
+
+		newDetailsProg, cmd2 := m.DetailsProgress.Update(msg)
+		m.DetailsProgress = newDetailsProg.(progress.Model)
+
+		return m, tea.Batch(cmd1, cmd2)
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -181,8 +273,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.AIResponseReceived {
 				htmlFile, err := GenerateHTML(m.Analysis, m.AIStories, m.TopCommandRemarks, m.AliasRemarks)
 				if err == nil {
-					// Open the file in the browser
-					// This is a quick hack for macOS, ideally use a library
 					_ = exec.Command("open", htmlFile).Start()
 				}
 			}
@@ -208,12 +298,11 @@ func (m Model) View() string {
 		return "Bye! 👋\n"
 	}
 
-	// Show loading screen with progress bar if AI is loading
+	// Show loading screen with progress bar if AI is loading (Intro)
 	if m.LoadingAI {
 		msg := loadingMessages[m.LoadingMsgIndex]
-		// If nearly full, force one of the "waiting" messages if not already showing one
 		if m.Progress.Percent() > 0.95 && m.LoadingMsgIndex < 4 {
-			m.LoadingMsgIndex = 4 // Jump to "Almost there..."
+			m.LoadingMsgIndex = 4
 			msg = loadingMessages[m.LoadingMsgIndex]
 		}
 
@@ -221,6 +310,18 @@ func (m Model) View() string {
 			"\n\n   %s\n\n   %s\n\n",
 			HelpStyle.Render(msg),
 			m.Progress.View(),
+		)
+	}
+
+	// Check if user is trying to view details before they are loaded
+	// Intro (0) and Rhythm (1) are safe. Others need details.
+	if m.LoadingDetails && m.CurrentSlide > 1 {
+		// Pick a random funny message based on time to make it feel alive
+		msgIndex := int(time.Now().Unix()) % len(detailLoadingMessages)
+		return fmt.Sprintf(
+			"\n\n   %s\n\n   %s\n\n",
+			HelpStyle.Render(detailLoadingMessages[msgIndex]),
+			m.DetailsProgress.View(),
 		)
 	}
 
@@ -233,7 +334,6 @@ func (m Model) View() string {
 	aiSection := ""
 
 	// Check if there is a story for this slide
-	// We map slide titles to story keys roughly
 	key := ""
 	title := m.Slides[m.CurrentSlide].Title()
 	if strings.HasPrefix(title, "Terminal Wrapped") {
@@ -254,10 +354,15 @@ func (m Model) View() string {
 		key = "hourly"
 	case "Monthly Activity":
 		key = "monthly"
+	case "Top Destinations":
+		key = "directory_heatmap"
+	case "Hacker Level":
+		key = "complexity"
+	case "Editor Wars":
+		key = "editor_wars"
 	}
 
 	if story, ok := m.AIStories[key]; ok && story != "" {
-		// Wrap text to 60 chars
 		wrappedStory := lipgloss.NewStyle().Width(60).Render(story)
 		aiSection = lipgloss.NewStyle().Foreground(ColorAccent).Italic(true).Render(fmt.Sprintf("🤖 %s", wrappedStory))
 	}
@@ -439,11 +544,27 @@ func (s TopCommandsSlide) Content(m Model) string {
 		maxCount = m.Analysis.TopCommands[0].Count
 	}
 
-	for _, cmd := range m.Analysis.TopCommands {
+	for i, cmd := range m.Analysis.TopCommands {
+		// Staggered animation: reveal one by one
+		// Total animation time is 1.0. We have N items.
+		// Item i reveals from (i/N) to ((i+1)/N) + overlap?
+		// Simpler: visible if AnimationPercent > (i / N)
+
+		threshold := float64(i) / float64(len(m.Analysis.TopCommands))
+		if m.AnimationPercent < threshold {
+			continue // Not visible yet
+		}
+
 		barWidth := 30
-		// Animate bar width
+		// Animate bar width: it grows from 0 to full *after* it appears
+		// Local percent for this item
+		localPercent := (m.AnimationPercent - threshold) * float64(len(m.Analysis.TopCommands))
+		if localPercent > 1.0 {
+			localPercent = 1.0
+		}
+
 		targetFilled := LogScale(cmd.Count, maxCount) * float64(barWidth)
-		filled := int(targetFilled * m.AnimationPercent)
+		filled := int(targetFilled * localPercent)
 
 		intensity := LogScale(cmd.Count, maxCount)
 		color := GetGradientColor(intensity)
@@ -588,6 +709,8 @@ func (s OutroSlide) Content(m Model) string {
 	sb.WriteString("Thanks for using Terminal Wrapped.\n")
 	sb.WriteString("Keep on coding and stay terminal-native! 🚀\n\n")
 
+	// ... (Previous slides)
+
 	// Add prominent Share CTA
 	shareStyle := lipgloss.NewStyle().
 		Foreground(ColorDark).
@@ -599,5 +722,93 @@ func (s OutroSlide) Content(m Model) string {
 	sb.WriteString(shareStyle.Render("PRESS 's' TO SHARE YOUR WRAPPED REPORT") + "\n\n")
 
 	sb.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("Press 'q' to quit."))
+	return sb.String()
+}
+
+// --- New Extended Analysis Slides ---
+
+type DirectorySlide struct{}
+
+func (s DirectorySlide) Title() string { return "Top Destinations" }
+func (s DirectorySlide) Content(m Model) string {
+	var sb strings.Builder
+	sb.WriteString(HeaderStyle.Render("Where you spend your time:") + "\n\n")
+
+	if len(m.Analysis.TopDirectories) == 0 {
+		return "No directory usage found. Do you even `cd`?"
+	}
+
+	maxCount := m.Analysis.TopDirectories[0].Count
+	for _, cmd := range m.Analysis.TopDirectories {
+		barWidth := 30
+		targetFilled := LogScale(cmd.Count, maxCount) * float64(barWidth)
+		filled := int(targetFilled * m.AnimationPercent)
+
+		intensity := LogScale(cmd.Count, maxCount)
+		color := GetGradientColor(intensity)
+
+		bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) +
+			BarBackgroundStyle.Render(strings.Repeat("░", barWidth-filled))
+
+		sb.WriteString(fmt.Sprintf("%-20s %s %d\n", cmd.Name, bar, cmd.Count))
+	}
+	return sb.String()
+}
+
+type ComplexitySlide struct{}
+
+func (s ComplexitySlide) Title() string { return "Hacker Level" }
+func (s ComplexitySlide) Content(m Model) string {
+	var sb strings.Builder
+	sb.WriteString(HeaderStyle.Render("Command Complexity Score:") + "\n\n")
+
+	score := m.Analysis.ComplexityScore
+	level := "Script Kiddie 👶"
+	if score > 0.5 {
+		level = "Junior Dev 👨‍💻"
+	}
+	if score > 1.0 {
+		level = "Bash Wizard 🧙‍♂️"
+	}
+	if score > 2.0 {
+		level = "10x Engineer 🚀"
+	}
+
+	sb.WriteString(fmt.Sprintf("Score: %.2f\n", score))
+	sb.WriteString(fmt.Sprintf("Level: %s\n\n", lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(level)))
+
+	sb.WriteString("Breakdown:\n")
+	sb.WriteString(fmt.Sprintf("- Pipes (|): %d\n", m.Analysis.PipeCount))
+	sb.WriteString(fmt.Sprintf("- Redirects (>): %d\n", m.Analysis.RedirectCount))
+	sb.WriteString(fmt.Sprintf("- Chains (&&, ;): %d\n", m.Analysis.ChainCount))
+
+	return sb.String()
+}
+
+type EditorSlide struct{}
+
+func (s EditorSlide) Title() string { return "Editor Wars" }
+func (s EditorSlide) Content(m Model) string {
+	var sb strings.Builder
+	sb.WriteString(HeaderStyle.Render("Your weapon of choice:") + "\n\n")
+
+	if len(m.Analysis.TopEditors) == 0 {
+		return "No editor usage found. real programmers use `cat` > file.c?"
+	}
+
+	maxCount := m.Analysis.TopEditors[0].Count
+	for _, cmd := range m.Analysis.TopEditors {
+		barWidth := 30
+		targetFilled := LogScale(cmd.Count, maxCount) * float64(barWidth)
+		filled := int(targetFilled * m.AnimationPercent)
+
+		intensity := LogScale(cmd.Count, maxCount)
+		color := GetGradientColor(intensity)
+
+		bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) +
+			BarBackgroundStyle.Render(strings.Repeat("░", barWidth-filled))
+
+		sb.WriteString(fmt.Sprintf("%-10s %s %d\n", cmd.Name, bar, cmd.Count))
+	}
 	return sb.String()
 }
