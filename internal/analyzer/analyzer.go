@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,14 @@ type Analysis struct {
 	LongestStreak      int
 	LongestStreakStart time.Time
 	LongestStreakEnd   time.Time
+
+	// Extended Analysis
+	TopDirectories  []CommandCount
+	ComplexityScore float64
+	PipeCount       int
+	RedirectCount   int
+	ChainCount      int
+	TopEditors      []CommandCount
 }
 
 type CommandCount struct {
@@ -59,11 +68,23 @@ func Analyze(commands []parser.Command, aliases map[string]string) *Analysis {
 
 	commandCounts := make(map[string]int)
 	aliasCounts := make(map[string]int)
+	dirCounts := make(map[string]int)
+	editorCounts := make(map[string]int)
 	uniqueCmds := make(map[string]bool)
 
 	// For streak calculation
 	activeDays := make(map[string]bool)
 	var sortedDays []string
+
+	editors := map[string]bool{
+		"vim": true, "nvim": true, "vi": true,
+		"nano": true, "pico": true,
+		"emacs": true,
+		"code":  true, "subl": true, "atom": true,
+		"cursor": true,
+	}
+
+	totalComplexity := 0
 
 	for _, cmd := range commands {
 		uniqueCmds[cmd.Command] = true
@@ -85,16 +106,120 @@ func Analyze(commands []parser.Command, aliases map[string]string) *Analysis {
 		stats.Punchcard[weekday][cmd.Timestamp.Hour()]++
 		stats.DayOfWeekStats[weekday]++
 
+		// Complexity Score
+		complexity := 0
+		pipes := strings.Count(cmd.Command, "|")
+		redirects := strings.Count(cmd.Command, ">")
+		chains := strings.Count(cmd.Command, "&&") + strings.Count(cmd.Command, ";")
+
+		complexity += pipes
+		complexity += redirects
+		complexity += chains
+
+		stats.PipeCount += pipes
+		stats.RedirectCount += redirects
+		stats.ChainCount += chains
+
+		totalComplexity += complexity
+
 		// Command counts
 		parts := strings.Fields(cmd.Command)
 		if len(parts) > 0 {
 			baseCmd := parts[0]
+
+			// Resolve alias for directory analysis purpose
+			// (We still count the alias name itself in commandCounts below)
+			expandedCmd := baseCmd
+			expandedParts := parts
+			if val, ok := aliases[baseCmd]; ok {
+				expandedCmd = val
+				// Re-tokenize the expanded command
+				expandedParts = strings.Fields(expandedCmd)
+				// Append original arguments if any
+				if len(parts) > 1 {
+					expandedParts = append(expandedParts, parts[1:]...)
+				}
+			}
+
+			// Directory Heatmap (cd / z)
+			// Check against the EXPANDED command
+			cmdToCheck := baseCmd
+			if len(expandedParts) > 0 {
+				cmdToCheck = expandedParts[0]
+			}
+
+			if cmdToCheck == "cd" || cmdToCheck == "z" {
+				if len(expandedParts) > 1 {
+					// Join all parts after command to handle spaces
+					rawTarget := strings.Join(expandedParts[1:], " ")
+
+					// 1. Basic string cleaning
+					dir := cleanPath(rawTarget)
+
+					// 2. Normalize
+					dir = filepath.Clean(dir)
+
+					// 3. Segment and Count
+					// We split by standard separator
+					// cleanPath might leave us with things like "~/code/projects"
+					// We want to count "code", "projects", "surfcontroller" separately.
+
+					// 3. Hierarchical Counting
+					// Instead of splitting by separator, we walk up the tree.
+					// e.g. "~/code/projects" -> count "~/code/projects", count "~/code"
+
+					currentPath := dir
+					currentUser := os.Getenv("USER")
+
+					// Avoid infinite loops just in case
+					for i := 0; i < 20; i++ {
+						if currentPath == "" || currentPath == "." || currentPath == "/" || currentPath == "~" {
+							break
+						}
+
+						// Noise filtering
+						// Ignore /Users and /Users/username
+						if currentPath == "Users" || currentPath == "/Users" {
+							goto NextParent
+						}
+						if currentUser != "" {
+							if currentPath == "Users/"+currentUser || currentPath == "/Users/"+currentUser {
+								goto NextParent
+							}
+							if currentPath == currentUser { // relative case
+								goto NextParent
+							}
+						}
+
+						// Count this path
+						dirCounts[currentPath]++
+
+					NextParent:
+						next := filepath.Dir(currentPath)
+						if next == currentPath { // Root reached
+							break
+						}
+						currentPath = next
+					}
+				}
+			}
+
+			// Check for aliases (original logic)
 			if _, isAlias := aliases[baseCmd]; isAlias {
 				aliasCounts[baseCmd]++
 			} else {
 				commandCounts[baseCmd]++
 			}
+
+			// Editor Wars
+			if editors[baseCmd] {
+				editorCounts[baseCmd]++
+			}
 		}
+	}
+
+	if len(commands) > 0 {
+		stats.ComplexityScore = float64(totalComplexity) / float64(len(commands))
 	}
 
 	stats.UniqueCommands = len(uniqueCmds)
@@ -120,6 +245,28 @@ func Analyze(commands []parser.Command, aliases map[string]string) *Analysis {
 	})
 	if len(stats.TopAliases) > 10 {
 		stats.TopAliases = stats.TopAliases[:10]
+	}
+
+	// Process Top Directories
+	for name, count := range dirCounts {
+		stats.TopDirectories = append(stats.TopDirectories, CommandCount{Name: name, Count: count})
+	}
+	sort.Slice(stats.TopDirectories, func(i, j int) bool {
+		return stats.TopDirectories[i].Count > stats.TopDirectories[j].Count
+	})
+	if len(stats.TopDirectories) > 5 {
+		stats.TopDirectories = stats.TopDirectories[:5]
+	}
+
+	// Process Top Editors
+	for name, count := range editorCounts {
+		stats.TopEditors = append(stats.TopEditors, CommandCount{Name: name, Count: count})
+	}
+	sort.Slice(stats.TopEditors, func(i, j int) bool {
+		return stats.TopEditors[i].Count > stats.TopEditors[j].Count
+	})
+	if len(stats.TopEditors) > 5 {
+		stats.TopEditors = stats.TopEditors[:5]
 	}
 
 	// Find Max values
@@ -261,4 +408,24 @@ func ParseAliases(homeDir string) (map[string]string, error) {
 		}
 	}
 	return aliases, nil
+}
+
+func cleanPath(path string) string {
+	// Remove surrounding quotes
+	if len(path) >= 2 {
+		if (path[0] == '"' && path[len(path)-1] == '"') ||
+			(path[0] == '\'' && path[len(path)-1] == '\'') {
+			path = path[1 : len(path)-1]
+		}
+	}
+
+	// Handle escaped spaces
+	path = strings.ReplaceAll(path, "\\ ", " ")
+
+	// Remove trailing slash if present (but not if it's just "/")
+	if len(path) > 1 && strings.HasSuffix(path, "/") {
+		path = path[:len(path)-1]
+	}
+
+	return path
 }
