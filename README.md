@@ -3,8 +3,6 @@
 
 A CLI tool to visualize your terminal usage history, written in Go.
 
-![Terminal Wrapped](wrapped.png)
-
 ## Installation
 
 ### Option 1: Download Pre-built Binary (Recommended)
@@ -42,7 +40,7 @@ Download `terminal-wrapped-windows-amd64.exe` or `terminal-wrapped-windows-arm64
 
 ### Option 2: Install with Go
 
-Requires Go 1.25 or later:
+Requires [Go 1.25 or later](https://go.dev/doc/install):
 
 ```bash
 go install github.com/rgrouls/terminal-wrapped/cmd/terminal-wrapped@latest
