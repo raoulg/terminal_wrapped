@@ -1,5 +1,5 @@
 # Terminal Wrapped 🎄✨
-<img src="wrapped.png" alt="Alt text" width="800"/>
+<img src="wrapped.png" alt="Alt text" width="400"/>
 
 A CLI tool to visualize your terminal usage history, written in Go.
 
